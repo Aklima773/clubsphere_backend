@@ -1,4 +1,4 @@
-const express = require('express')
+const express = require('express');
 const cors = require('cors');
 const app = express();
 require('dotenv').config();
@@ -67,7 +67,9 @@ const client = new MongoClient(uri, {
 
      const db = client.db('clubsphere');
      const userCollection = db.collection('users');
-
+     const cityCollection = db.collection('cities');
+     const categoryCollection = db.collection('categories');
+     const clubsCollection = db.collection('clubs')
 
     //  / verify admin 
 
@@ -84,8 +86,9 @@ const client = new MongoClient(uri, {
         };
 
         //verifyClubManageer
-        const verifyClubManageer = async (req, res, next) => {
+        const verifyClubManager = async (req, res, next) => {
           const email = req.decoded_email;
+          
           const query = {email};
           const user = await userCollection.findOne(query);
 
@@ -165,6 +168,198 @@ app.get('/users/:email/role',verifyFBToken,  async (req, res) => {
   })
 
 
+
+
+  //geting available cities
+  app.get('/cities',async (req, res) => {
+  
+  const result = await cityCollection.find().toArray();
+   res.send(result);
+});
+
+
+//getting all category
+  app.get('/categories',async (req, res) => {
+  
+    const result = await categoryCollection.find().toArray();
+     res.send(result);
+  });
+  
+
+
+  // clbus related api 
+
+  // clubs create 
+
+  app.post('/clubs', verifyFBToken, async (req, res) => {
+   
+        const clubData = req.body;
+        const email = clubData.managerEmail; // or from token: req.decoded_email
+
+      
+        const user = await userCollection.findOne({ email: email });
+
+        if (!user) {
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        // Only allow if role is 'club manager'
+        if (user.role !== 'club-manager') {
+            return res.status(403).send({ message: 'Access forbidden: only club managers can create clubs' });
+        }
+
+        // Set default values
+        clubData.status = 'pending';
+        clubData.createdAt = new Date();
+
+        const result = await clubsCollection.insertOne(clubData);
+
+        if (result.insertedId) {
+            return res.status(201).send({ insertedId: result.insertedId, message: 'Club created successfully' });
+        } else {
+            return res.status(500).send({ message: 'Failed to create club' });
+        }
+
+  
+});
+
+//calling created clubs by looged manager who create that
+
+app.get('/myclubs/:email', verifyFBToken, async (req, res) => {
+  const email = req.params.email;
+
+  // security check
+  if (email !== req.decoded_email) {
+    return res.status(403).send({ message: 'forbidden access' });
+  }
+
+  const query = { managerEmail: email };
+  const myClubs = await clubsCollection.find(query).sort({createdAt: -1}).toArray();
+
+  res.send(myClubs);
+});
+
+
+
+// upate clubs 
+// step 1 call to set default value
+app.get('/clubs/:id', verifyFBToken, async (req, res) => {
+  const id = req.params.id;
+  const club = await clubsCollection.findOne({ _id: new ObjectId(id) });
+  res.send(club);
+});
+
+// step 2 after change patch now
+app.patch('/clubs/:id', verifyFBToken, verifyClubManager, async (req, res) => {
+    const { id } = req.params;
+    const email = req.decoded_email;
+    const updatedData = req.body;
+
+
+    const club = await clubsCollection.findOne({
+      _id: new ObjectId(id),
+    });
+
+    if (!club) {
+      return res.status(404).send({ message: 'Club not found' });
+    }
+
+
+    if (club.managerEmail !== email) {
+      return res.status(403).send({ message: 'Forbidden access' });
+    }
+
+
+    const updateDoc = {
+      $set: {
+        clubName: updatedData.clubName,
+        description: updatedData.description,
+        category: updatedData.category,
+        membershipFee: updatedData.membershipFee,
+        updatedAt: new Date(),
+      },
+    };
+
+ const result = await clubsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      updateDoc
+    );
+
+    res.send(result);
+  }
+);
+
+
+//delete listed manager club
+    app.delete('/clubs/:id', verifyFBToken, verifyClubManager, async (req, res) =>{
+
+      const {id} = req.params;
+      
+
+      const query = {_id: new ObjectId(id)}
+
+      const result = await clubsCollection.deleteOne(query);
+      res.send(result);
+
+
+    });
+
+    //all reqted clubs show
+
+    app.get('/pendingClubs/:email', verifyFBToken, verifyAdmin, async (req, res) => {
+      const email = req.params.email;
+      if (email !== req.decoded_email) {
+    return res.status(403).send({ message: 'Forbidden access' });
+  }
+
+  
+
+      // const query = { status: { $ne: 'rejected' } };
+
+    
+     
+    
+      // const query = { managerEmail: email };
+      const pendingClubs = await clubsCollection.find({status:{$ne:'rejected'} }).sort({createdAt: -1 }).toArray();
+    
+      res.send(pendingClubs);
+    });
+    
+    
+  
+    
+  
+     
+  // });
+
+
+  // approved pendingclubs 
+  app.patch('/pendingclubs/:id',verifyFBToken, verifyAdmin,  async (req, res) => {
+    const status = req.body.status;
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+
+  
+
+    const updateDoc = {
+      $set: { status: status}
+    };
+    const result = await clubsCollection.updateOne(query, updateDoc);
+
+    if (result.modifiedCount === 1) {
+      res.send({ success: true, message: 'Club Approved successfully' });
+    } else {
+      res.status(404).send({ success: false, message: 'Club not found' });
+    }
+  
+
+   
+});
+
+
+
+   
+ 
 
       // Send a ping to confirm a successful connection
       await client.db("admin").command({ ping: 1 });
