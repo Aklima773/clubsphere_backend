@@ -184,6 +184,40 @@ app.get('/users/:email/role',verifyFBToken,  async (req, res) => {
     const result = await categoryCollection.find().toArray();
      res.send(result);
   });
+
+
+  //create category
+  app.post('/category',verifyFBToken,verifyAdmin, async(req,res)=>{
+
+    const categoryData = req.body;
+    const email = req.decoded_email; // or from token: req.decoded_email
+
+  
+    const user = await userCollection.findOne({ email: email });
+
+    if (!user) {
+        return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Only allow if role is 'club manager'
+    if (user.role !== 'admin') {
+        return res.status(403).send({ message: 'Access forbidden: only Admin can create category' });
+    }
+
+    // Set default values
+    categoryData.status = 'Active';
+    categoryData.createdAt = new Date();
+
+    const result = await categoryCollection.insertOne(categoryData);
+
+    if (result.insertedId) {
+        return res.status(201).send({ insertedId: result.insertedId, message: 'Category created successfully' });
+    } else {
+        return res.status(500).send({ message: 'Failed to create category' });
+    }
+
+
+  })
   
 
 
@@ -207,10 +241,13 @@ app.get('/users/:email/role',verifyFBToken,  async (req, res) => {
         if (user.role !== 'club-manager') {
             return res.status(403).send({ message: 'Access forbidden: only club managers can create clubs' });
         }
+// set category id 
+
 
         // Set default values
         clubData.status = 'pending';
         clubData.createdAt = new Date();
+        
 
         const result = await clubsCollection.insertOne(clubData);
 
@@ -223,6 +260,27 @@ app.get('/users/:email/role',verifyFBToken,  async (req, res) => {
   
 });
 
+// get clubs 
+app.get('/clubs', async(req,res)=>{
+
+  const result = await clubsCollection.find().toArray();
+  return res.send(result)
+})
+
+
+// get club by id 
+app.get('/club/:id', async(req,res)=>{
+  const id =req.params;
+
+  const query= {
+    _id: new ObjectId(id)};
+
+  const club = await clubsCollection.findOne(query)
+
+  return res.send(club)
+
+
+})
 //calling created clubs by looged manager who create that
 
 app.get('/myclubs/:email', verifyFBToken, async (req, res) => {
@@ -248,6 +306,8 @@ app.get('/clubs/:id', verifyFBToken, async (req, res) => {
   const club = await clubsCollection.findOne({ _id: new ObjectId(id) });
   res.send(club);
 });
+
+
 
 // step 2 after change patch now
 app.patch('/clubs/:id', verifyFBToken, verifyClubManager, async (req, res) => {
@@ -288,6 +348,27 @@ app.patch('/clubs/:id', verifyFBToken, verifyClubManager, async (req, res) => {
     res.send(result);
   }
 );
+
+
+// category by id 
+app.get('/categories/:id', async (req, res) => {
+  const { id } = req.params;
+  const category = await categoryCollection.findOne({ _id: new ObjectId(id) });
+  res.send(category);
+});
+
+// get category wise club 
+app.get('/categories/:categoryId/clubs', async (req, res) => {
+  try {
+    const categoryId = req.params;
+    const query = { categoryId: new ObjectId(categoryId) };
+    const clubs = await clubsCollection.find(query).toArray();
+    res.send(clubs);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: 'Invalid category ID or server error' });
+  }
+});
 
 
 //delete listed manager club
