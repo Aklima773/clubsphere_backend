@@ -17,7 +17,13 @@ app.use(cors());
 // 1.varify firbase token 
 var admin = require("firebase-admin");
 
-var serviceAccount = require("./firebase_admin_token.json");
+// var serviceAccount = require("./firebase_admin_token.json");
+
+
+// const serviceAccount = require("./firebase-admin-key.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -27,6 +33,7 @@ admin.initializeApp({
 // 2.verify firebase token 
 const verifyFBToken = async (req, res, next) => {
   const token = req.headers.authorization;
+  
 
   if (!token) {
       return res.status(401).send({ message: 'unauthorized access' })
@@ -69,7 +76,8 @@ const client = new MongoClient(uri, {
      const userCollection = db.collection('users');
      const cityCollection = db.collection('cities');
      const categoryCollection = db.collection('categories');
-     const clubsCollection = db.collection('clubs')
+     const clubsCollection = db.collection('clubs');
+     const eventsCollection = db.collection('events')
 
     //  / verify admin 
 
@@ -100,6 +108,9 @@ const client = new MongoClient(uri, {
         };
 
 
+
+        //EVENTS API 
+ 
     //  users api 
 
     //get all users list
@@ -397,7 +408,8 @@ app.get('/categories/:categoryId/clubs', async (req, res) => {
 
       // const query = { status: { $ne: 'rejected' } };
 
-    
+    // events api 
+   
      
     
       // const query = { managerEmail: email };
@@ -439,11 +451,68 @@ app.get('/categories/:categoryId/clubs', async (req, res) => {
 
 
 
+  //  event route 
+          
+  app.post('/events', verifyFBToken, verifyClubManager, async (req, res) => {
    
+    const eventInfo = req.body;
+    const email = eventInfo.managerEmail; // or from token: req.decoded_email
+
+  
+    const user = await userCollection.findOne({ email: email });
+
+    if (!user) {
+        return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Only allow if role is 'club manager'
+    if (user.role !== 'club-manager') {
+        return res.status(403).send({ message: 'Access forbidden: only club managers can create clubs' });
+    }
+// set event date number
+if (eventInfo.eventDate) {
+  eventInfo.eventDate = new Date(eventInfo.eventDate).getTime();
+}
+
+
+    // Set default values
+    eventInfo.status = 'Active';
+    eventInfo.createdAt = new Date().getTime();
+    
+
+    const result = await eventsCollection.insertOne(eventInfo);
+
+    if (result.insertedId) {
+        return res.status(201).send({ insertedId: result.insertedId, message: 'Event created successfully' });
+    } else {
+        return res.status(500).send({ message: 'Failed to create event' });
+    }
+
+
+});
  
 
+
+
+// get events 
+app.get('/myevents/:email', verifyFBToken, async (req, res) => {
+
+  const email = req.params.email;
+
+  // security check
+  if (email !== req.decoded_email) {
+    return res.status(403).send({ message: 'forbidden access' });
+  }
+
+  const query = { managerEmail: email };
+
+  const myevent = await eventsCollection.find(query).sort({eventDate: -1}).toArray();
+
+  res.send(myevent);
+});
+
       // Send a ping to confirm a successful connection
-      await client.db("admin").command({ ping: 1 });
+      // await client.db("admin").command({ ping: 1 });
       console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
      
