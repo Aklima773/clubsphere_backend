@@ -77,7 +77,8 @@ const client = new MongoClient(uri, {
      const cityCollection = db.collection('cities');
      const categoryCollection = db.collection('categories');
      const clubsCollection = db.collection('clubs');
-     const eventsCollection = db.collection('events')
+     const eventsCollection = db.collection('events');
+     const joiningReqCollection = db.collection('joiningreq')
 
     //  / verify admin 
 
@@ -274,24 +275,20 @@ app.get('/users/:email/role',verifyFBToken,  async (req, res) => {
 // get clubs 
 app.get('/clubs', async(req,res)=>{
 
-  const result = await clubsCollection.find().toArray();
+  const query = {status:"approved"}
+
+  const result = await clubsCollection.find(query).toArray();
   return res.send(result)
 })
 
 
 // get club by id 
 app.get('/club/:id', async(req,res)=>{
-  const id =req.params;
-
-  const query= {
-    _id: new ObjectId(id)};
-
-  const club = await clubsCollection.findOne(query)
-
-  return res.send(club)
-
-
-})
+  const id = req.params.id;  
+  const query = {_id: new ObjectId(id)};
+  const club = await clubsCollection.findOne(query);
+  res.send(club);
+});
 //calling created clubs by looged manager who create that
 
 app.get('/myclubs/:email', verifyFBToken, async (req, res) => {
@@ -312,11 +309,11 @@ app.get('/myclubs/:email', verifyFBToken, async (req, res) => {
 
 // upate clubs 
 // step 1 call to set default value
-app.get('/clubs/:id', verifyFBToken, async (req, res) => {
-  const id = req.params.id;
-  const club = await clubsCollection.findOne({ _id: new ObjectId(id) });
-  res.send(club);
-});
+// app.get('/club/:id', verifyFBToken, async (req, res) => {
+//   const id = req.params.id;
+//   const club = await clubsCollection.findOne({ _id: new ObjectId(id) });
+//   res.send(club);
+// });
 
 
 
@@ -492,6 +489,118 @@ if (eventInfo.eventDate) {
 });
  
 
+// get my events 
+
+app.get('/myevents/:email', verifyFBToken, async (req, res) => {
+  const email = req.params.email;
+
+  // security check
+  if (email !== req.decoded_email) {
+    return res.status(403).send({ message: 'forbidden access' });
+  }
+
+  const query = { managerEmail: email };
+  const myEvents = await eventsCollection.find(query).sort({createdDate: -1}).toArray();
+
+  res.send(myEvents);
+});
+
+
+// member evenets 
+app.get('/memberevents/:email', verifyFBToken, async (req, res) => {
+  const email = req.params.email;
+
+  // security check
+  if (email !== req.decoded_email) {
+    return res.status(403).send({ message: 'forbidden access' });
+  }
+
+  // , status: { $ne: 'rejected' }
+
+  const query = { userEmail: email };
+  const memberEvents = await joiningReqCollection.find(query).sort({appliedAt: -1}).toArray();
+
+  res.send(memberEvents);
+});
+
+// delete my events 
+app.delete('/myevent/:id', verifyFBToken, verifyClubManager, async (req, res) =>{
+
+  const {id} = req.params;
+  
+
+  const query = {_id: new ObjectId(id)}
+
+  const result = await eventsCollection.deleteOne(query);
+  res.send(result);
+
+
+});
+
+// get all events 
+app.get('/allevents',  async (req, res) => {
+
+  
+
+  const events = await eventsCollection.find().sort({eventDate: -1}).toArray();
+
+  res.send(events);
+});
+
+
+// events by id 
+app.get('/event/:id',  async (req, res) =>{
+
+  const {id} = req.params;
+  
+
+  const query = {_id: new ObjectId(id)}
+
+  const result = await eventsCollection.findOne(query);
+  res.send(result);
+
+
+});
+
+
+// calling clubs event 
+app.get('/events/club/:clubId', async (req, res) => {
+  const clubId = req.params.clubId;  
+  const query = { clubId };  
+  const result = await eventsCollection.find(query).toArray();
+  res.send(result);
+});
+
+
+// joining req 
+
+
+app.post('/join-event', verifyFBToken, async (req, res) => {
+  const joinRequest = req.body;
+  
+  
+  const existingRequest = await joiningReqCollection.findOne({
+      userEmail: joinRequest.userEmail,
+      eventId: joinRequest.eventId,
+      status: { $ne: 'rejected' }
+  });
+
+  if (existingRequest) {
+      return res.status(400).send({ message: 'Already applied for this event!' });
+  }
+
+  // Save join request
+  const result = await joiningReqCollection.insertOne({
+      ...joinRequest,
+      createdAt: new Date().getTime()
+  });
+
+  if (result.insertedId) {
+      res.json({ insertedId: result.insertedId, message: 'Application sent successfully' });
+  } else {
+      res.status(500).send({ message: 'Failed to save application' });
+  }
+});
 
 
 // get events 
